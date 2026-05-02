@@ -1,0 +1,89 @@
+# Graphics Assets Needed for menotics_passenger_drone Mod
+
+## Required Texture Files
+
+### 1. Drone Texture (PRIMARY)
+**File:** `menotics-passenger.png`
+- **Recommended Size:** 512x384 pixels (or any 4:3 ratio like 256x192, 128x96)
+- **Description:** This is the main texture for the drone entity. Since the drone is 4 blocks long and 3 blocks high with glass surfaces, consider:
+  - A futuristic vehicle design with transparent/glass sections
+  - You can see passengers inside (show silhouettes or interior details)
+  - Metallic frame with glass windows
+  - Maybe some glowing elements (lights, engines)
+  - The texture wraps around a 3D model, so design accordingly
+
+### 2. Terminal Block Texture
+**File:** `terminal.png`
+- **Size:** 16x16 pixels (standard Minetest node texture)
+- **Description:** Texture for the 1x1 terminal block where drones dock
+  - Consider a landing pad design
+  - Maybe glowing indicators or markings
+  - Futuristic/technological appearance
+  - Could have a "T" or target-like marking for landing zone
+
+### 3. Invisible Texture (OPTIONAL - already exists in most games)
+**File:** `invisible.png`
+- **Size:** 16x16 pixels
+- **Description:** Used for the invisible terminal tracking entity
+- **Note:** Most Minetest games already have this texture (completely transparent)
+
+## 3D Model File
+
+### Drone Model
+**File:** `menotics_drone.b3d`
+- **Format:** Blender exported as .b3d (Minetest's preferred format)
+- **Dimensions:** Should represent a 4-block long, 3-block high vehicle
+  - Approximately 4 meters long (X-axis)
+  - 3 meters tall (Y-axis)
+  - 1-2 meters wide (Z-axis)
+- **Design Suggestions:**
+  - Elongated vehicle shape
+  - Glass cockpit/cabin area where passengers are visible
+  - Landing gear or hover elements on bottom
+  - Consider adding animation bones for:
+    - Rotating propellers/fans (if applicable)
+    - Opening doors
+    - Moving parts
+
+## Alternative: Using Cube Mesh
+
+If you don't want to create a custom 3D model immediately, you can modify the init.lua to use a simple cube mesh with multiple textures. The current code uses a mesh, but you could change it to:
+
+```lua
+visual = "cube",
+textures = {"menotics-passenger-side.png", "menotics-passenger-side.png", 
+            "menotics-passenger-top.png", "menotics-passenger-bottom.png",
+            "menotics-passenger-front.png", "menotics-passenger-back.png"},
+```
+
+This would require creating 6 separate texture files but no 3D modeling.
+
+## Art Style Recommendations
+
+Since this is a passenger drone with glass surfaces where you can see who's inside:
+
+1. **Transparency:** Use alpha channel (transparency) for glass sections
+2. **Interior Details:** Add seat outlines or passenger silhouettes
+3. **Lighting:** Add emissive/glowing parts for lights and displays
+4. **Color Scheme:** Consider:
+   - White/silver body with blue-tinted glass (clean, futuristic)
+   - Yellow/black (industrial, caution)
+   - Your choice based on your game's aesthetic
+
+## File Placement
+
+All texture files should be placed in:
+```
+menotics_passenger_drone/textures/
+├── menotics-passenger.png
+├── terminal.png
+└── invisible.png (if needed)
+```
+
+The model file should be placed in:
+```
+menotics_passenger_drone/models/
+└── menotics_drone.b3d
+```
+
+Note: You'll need to create the `models` folder if using a custom mesh.
