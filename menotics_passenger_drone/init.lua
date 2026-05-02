@@ -52,9 +52,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         collide_with_objects = true,
         collisionbox = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5},
         selectionbox = {-0.6, -0.6, -0.6, 0.6, 0.6, 0.6},
-        visual = "mesh",
-        mesh = "menotics_drone.b3d",
-        textures = {"menotics_drone_texture.png"},
+        visual = "sprite",
+        textures = {"menotics_drone.png"},
         automatic_rotate = false,
         stepheight = 0.6,
         falls = false,
@@ -314,7 +313,7 @@ minetest.register_craft({
 -- Drohne als Item (zum Platzieren)
 minetest.register_craftitem("menotics_passenger_drone:drone_item", {
     description = "Passenger Drone (Place)",
-    inventory_image = "menotics_drone_item.png",
+    inventory_image = "menotics_drone.png",
     
     on_place = function(itemstack, placer, pointed_thing)
         local pos = pointed_thing.above
