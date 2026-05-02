@@ -38,7 +38,18 @@ minetest.register_node("menotics_passenger_drone:terminal", {
 -- Helper function to find all terminal blocks
 local function find_terminals()
     local terminals = {}
-    local minp, maxp = minetest.get_mapgen_limit()
+    
+    -- Try to get mapgen limits, fallback to searching around active players/drone if unavailable
+    local minp, maxp
+    if minetest.get_mapgen_limit then
+        minp, maxp = minetest.get_mapgen_limit()
+    else
+        -- Fallback: search within a large but reasonable area around spawn (0,0,0)
+        -- This covers most typical use cases
+        local search_radius = 5000
+        minp = vector.new(-search_radius, -search_radius, -search_radius)
+        maxp = vector.new(search_radius, search_radius, search_radius)
+    end
     
     local pos_list = minetest.find_nodes_in_area(
         vector.new(minp.x, minp.y, minp.z),
