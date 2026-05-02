@@ -36,53 +36,31 @@ minetest.register_node("menotics_passenger_drone:terminal", {
 })
 
 -- Helper function to find all terminal blocks
-local function find_terminals()
+local function find_terminals(pos)
     local terminals = {}
     local found_set = {} -- Track found positions to avoid duplicates
     
-    -- Search in smaller chunks to avoid exceeding area volume limit (150,000,000 nodes)
-    -- Each chunk is 2000x2000x2000 = 8,000,000 nodes (well under the limit)
-    local chunk_size = 2000
-    local search_radius = 4000 -- Total search area: 8000x8000x8000
+    local start_pos = vector.floor(pos or {x=0, y=0, z=0})
     
-    local minp_global = vector.new(-search_radius, -search_radius, -search_radius)
-    local maxp_global = vector.new(search_radius, search_radius, search_radius)
+    -- SIMPLE SAFE APPROACH: Search a fixed moderate area around the drone/start position
+    -- 150 block radius = 300x300x300 = 27,000,000 nodes - VERY SAFE (under 150M limit)
+    local search_dist = 150
     
-    -- Iterate through chunks
-    for x = minp_global.x, maxp_global.x, chunk_size do
-        for y = minp_global.y, maxp_global.y, chunk_size do
-            for z = minp_global.z, maxp_global.z, chunk_size do
-                local chunk_minp = vector.new(x, y, z)
-                local chunk_maxp = vector.new(
-                    math.min(x + chunk_size - 1, maxp_global.x),
-                    math.min(y + chunk_size - 1, maxp_global.y),
-                    math.min(z + chunk_size - 1, maxp_global.z)
-                )
-                
-                local pos_list = minetest.find_nodes_in_area(
-                    chunk_minp,
-                    chunk_maxp,
-                    "menotics_passenger_drone:terminal",
-                    false
-                )
-                
-                for _, pos in ipairs(pos_list) do
-                    local key = pos.x .. "," .. pos.y .. "," .. pos.z
-                    if not found_set[key] then
-                        found_set[key] = true
-                        table.insert(terminals, vector.new(pos))
-                    end
-                end
-                
-                -- Stop early if we already have at least 2 terminals
-                if #terminals >= 2 then
-                    goto continue_outer
-                end
-            end
-        end
-        ::continue_outer::
-        if #terminals >= 2 then
-            break
+    local minp = vector.subtract(start_pos, search_dist)
+    local maxp = vector.add(start_pos, search_dist)
+
+    local pos_list = minetest.find_nodes_in_area(
+        minp,
+        maxp,
+        "menotics_passenger_drone:terminal",
+        false
+    )
+    
+    for _, p in ipairs(pos_list) do
+        local key = p.x .. "," .. p.y .. "," .. p.z
+        if not found_set[key] then
+            found_set[key] = true
+            table.insert(terminals, vector.new(p))
         end
     end
     
@@ -97,7 +75,7 @@ local function get_terminals_cached()
     local current_time = minetest.get_us_time()
     -- Update cache every 5 seconds
     if current_time - last_terminal_update > 5000000 then
-        terminal_cache = find_terminals()
+        terminal_cache = find_terminals({x=0, y=0, z=0})
         last_terminal_update = current_time
     end
     return terminal_cache
@@ -504,7 +482,7 @@ minetest.register_craft({
 minetest.register_globalstep(function(dtime)
     local current_time = minetest.get_us_time()
     if current_time - last_terminal_update > 10000000 then
-        terminal_cache = find_terminals()
+        terminal_cache = find_terminals({x=0, y=0, z=0})
         last_terminal_update = current_time
     end
 end)
@@ -516,7 +494,7 @@ minetest.register_abm({
     interval = 1,
     chance = 1,
     action = function(pos, node, active_object_count, active_object_count_wider)
-        terminal_cache = find_terminals()
+        terminal_cache = find_terminals({x=0, y=0, z=0})
         last_terminal_update = minetest.get_us_time()
     end,
 })
