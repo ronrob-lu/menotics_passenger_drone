@@ -173,12 +173,12 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         stepheight = 1.0,
         visual = "cube",
         textures = {
-            "menotics_drone_side.png",   -- right
-            "menotics_drone_side.png",   -- left
-            "menotics_drone_roof.png",   -- top
-            "menotics_drone_bottom.png", -- bottom
-            "menotics_drone_front.png",  -- front
-            "menotics_drone_back.png",   -- back
+            "menotics_drone_front.png",  -- front (+x)
+            "menotics_drone_back.png",   -- back (-x)
+            "menotics_drone_side.png",   -- right (+z)
+            "menotics_drone_side.png",   -- left (-z)
+            "menotics_drone_roof.png",   -- top (+y)
+            "menotics_drone_bottom.png", -- bottom (-y)
         },
         pointable = true,
         static_save = true,
@@ -239,7 +239,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             if self.wait_timer <= 0 then
                 -- Wait time over, start moving to next terminal
                 self.waiting = false
-                self.state = "moving"
+                self.state = "moving_to_terminal"
                 
                 -- Find next terminal (skip current one)
                 local next_terminal = find_nearest_terminal(pos, self.current_terminal)
@@ -277,7 +277,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                                 local speed = 3
                                 local velocity = vector.multiply(dir, speed)
                                 self.object:set_velocity(velocity)
-                                self.state = "moving"
+                                self.state = "moving_to_terminal"
                             else
                                 self.state = "waiting"
                                 self.wait_timer = 20
@@ -291,7 +291,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     end
                 end
             end
-        elseif self.state == "moving" then
+        elseif self.state == "moving_to_terminal" then
             local vel = self.object:get_velocity()
             
             -- Check for collision (velocity near zero but haven't reached target)

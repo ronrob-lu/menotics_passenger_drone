@@ -1,90 +1,53 @@
 # Graphics Assets Needed for Menotics Passenger Drone Mod
+==========================================================
 
-## Required Texture Files (6 PNG files total)
+All textures should be 84x64 pixels as specified.
+Place these PNG files in the textures/ folder.
 
-Place these files in the `textures/` folder of the mod:
+## Drone Textures (5 files required):
 
-### 1. menotics_drone_front.png
-- **Purpose**: Front face of the drone (narrow end, shows cockpit/glass area)
-- **Recommended Size**: 64x64 or 128x128 pixels
-- **Design Notes**: 
-  - Should show a glass/metal frame design
-  - Include transparent or semi-transparent areas to show passengers inside
-  - Consider adding lights or indicators
-  - This is the narrow front face (drone is 4 blocks long, this is the 2-block wide end)
+1. menotics_drone_front.png (84x64)
+   - Front view of the drone (+X face)
+   - Should show glass panels so passengers are visible inside
+   - Consider adding headlights or front details
 
-### 2. menotics_drone_back.png
-- **Purpose**: Rear face of the drone (narrow end)
-- **Recommended Size**: 64x64 or 128x128 pixels
-- **Design Notes**:
-  - Could show engines, thrusters, or exhaust
-  - Match the style of the front texture
-  - Same dimensions as front (narrow 2-block wide face)
+2. menotics_drone_back.png (84x64)
+   - Back view of the drone (-X face)
+   - Should show glass panels so passengers are visible inside
+   - Consider adding rear lights, exhaust, or propeller details
 
-### 3. menotics_drone_side.png
-- **Purpose**: Both left and right sides of the drone (same texture used for both)
-- **Recommended Size**: 128x64 or 256x128 pixels (wider since drone is 4 blocks long)
-- **Design Notes**:
-  - This is the main visible surface when drone is moving
-  - Show large glass panels to see passengers inside
-  - Add structural frames between glass sections
-  - Consider adding windows divided into sections matching the 4-block length
-  - Include details like doors, vents, or decorative elements
+3. menotics_drone_side.png (84x64)
+   - Side view of the drone (used for both +Z right and -Z left faces)
+   - Should show glass panels so passengers are visible inside
+   - This texture appears on both sides of the drone
+   - Consider adding windows, doors, or side details
 
-### 4. menotics_drone_roof.png
-- **Purpose**: Top surface of the drone
-- **Recommended Size**: 128x64 or 256x128 pixels (4 blocks long, 2 blocks wide)
-- **Design Notes**:
-  - Show the roof structure
-  - Could include antennas, lights, or ventilation
-  - Match the metallic/glass aesthetic
-  - Same proportions as the side (4 blocks long x 2 blocks wide)
+4. menotics_drone_roof.png (84x64)
+   - Top view of the drone (+Y face)
+   - Can be solid or have glass panels
+   - Consider adding roof details, antennas, or vents
 
-### 5. menotics_drone_bottom.png
-- **Purpose**: Bottom/underside of the drone
-- **Recommended Size**: 128x64 or 256x128 pixels (4 blocks long, 2 blocks wide)
-- **Design Notes**:
-  - Show landing gear, thrusters, or mechanical details
-  - Could have a darker, more industrial look
-  - Same proportions as the side (4 blocks long x 2 blocks wide)
+5. menotics_drone_bottom.png (84x64)
+   - Bottom view of the drone (-Y face)
+   - Usually solid with mechanical details
+   - Consider adding landing gear shadows, thrusters, or mechanical details
 
-## Important Notes
+## Important Notes:
 
-### No 3D Model Required!
-This mod uses Minetest's built-in "cube" visual type with custom dimensions.
-The drone will be rendered as a stretched box with your textures applied to each face.
-Dimensions: 4 blocks long (X), 3 blocks high (Y), 2 blocks wide (Z)
+- Use semi-transparent areas (alpha channel) in glass panel areas so players can see passengers inside
+- The drone is 4 blocks long, 3 blocks high, and 2 blocks wide
+- Textures are mapped to a cube visual with visual_size {x=4, y=3, z=2}
+- Glass areas should allow viewing of passengers seated inside
 
-### Glass Effect for Passengers
-To make passengers visible:
-- Use semi-transparent PNG files with alpha channel
-- The glass areas should be partially transparent (alpha ~100-150)
-- Consider using a tinted blue or cyan color for the glass
-- Frame the glass with opaque metal borders
-- Players inside will be visible through the transparent parts!
+## Terminal Block:
 
-### Terminal Block
-- **terminal.png** already exists in the default game textures (as you mentioned)
-- No additional graphics needed for terminals
+- terminal.png - Already exists in the default textures folder, no action needed!
 
-## File Checklist
-- [ ] textures/menotics_drone_front.png
-- [ ] textures/menotics_drone_back.png
-- [ ] textures/menotics_drone_side.png
-- [ ] textures/menotics_drone_roof.png
-- [ ] textures/menotics_drone_bottom.png
-
-## Suggested Color Scheme
-- Primary: Metallic gray/silver for frames
-- Secondary: Light blue or cyan tint for glass panels (semi-transparent!)
-- Accent: Orange or red for lights/indicators
-- Dark gray for underside/mechanical parts
-
-## Texture Mapping on Cube
-The cube visual maps textures in this order:
-1. Right side (menotics_drone_side.png)
-2. Left side (menotics_drone_side.png) - same texture
-3. Top/Roof (menotics_drone_roof.png)
-4. Bottom (menotics_drone_bottom.png)
-5. Front (menotics_drone_front.png)
-6. Back (menotics_drone_back.png)
+## Texture Mapping Order (for cube visual):
+The cube visual maps textures in this exact order:
+1. Front (+X)  -> menotics_drone_front.png
+2. Back (-X)   -> menotics_drone_back.png
+3. Right (+Z)  -> menotics_drone_side.png
+4. Left (-Z)   -> menotics_drone_side.png (same file)
+5. Top (+Y)    -> menotics_drone_roof.png
+6. Bottom (-Y) -> menotics_drone_bottom.png
