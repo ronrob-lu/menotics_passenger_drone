@@ -77,6 +77,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         self.wait_timer = 0
         self.path_index = 1
         self.path = {}
+        self.lamp_lit = false  -- Track if lamp is lit
         
         -- Daten aus staticdata laden
         if staticdata and staticdata ~= "" then
@@ -86,6 +87,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 self.current_terminal = data.current_terminal
                 self.previous_terminal = data.previous_terminal
                 self.wait_timer = data.wait_timer or 0
+                self.lamp_lit = data.lamp_lit or false
             end
         end
         
@@ -98,6 +100,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             current_terminal = self.current_terminal,
             previous_terminal = self.previous_terminal,
             wait_timer = self.wait_timer,
+            lamp_lit = self.lamp_lit,
         }
         return minetest.serialize(data)
     end,
@@ -120,7 +123,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         if self.state == "idle" then
             self:search_for_terminals()
             
-        elseif self.state == "moving_to_terminal" then
+        elseif self.state == "moving_to_terminal" or self.state == "moving_with_passenger" then
             self:move_to_target()
             
         elseif self.state == "waiting_at_terminal" then
@@ -131,10 +134,10 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 self.passenger = passengers[1]
                 minetest.chat_send_player(self.passenger:get_player_name(), 
                     "Du bist in die Drohne eingestiegen!")
+                -- Attach player to drone
+                self.passenger:set_attach(self.object, "", {x=0, y=1.5, z=0}, {x=0, y=0, z=0})
+                self.passenger:set_eye_offset({x=0, y=5, z=0}, {x=0, y=0, z=0})
             end
-            
-        elseif self.state == "moving_with_passenger" then
-            self:move_to_target()
             
         else
             self.state = "idle"
@@ -251,12 +254,23 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         
         -- Ziel erreicht?
         if distance < 1.5 then
-            if self.state == "moving_to_terminal" then
+            -- Stop moving
+            self.object:set_velocity({x=0, y=0, z=0})
+            
+            if self.state == "moving_to_terminal" or self.state == "moving_with_passenger" then
                 -- Store current as previous before setting new current
                 self.previous_terminal = self.current_terminal
                 self.current_terminal = self.target_pos
-                self.state = "waiting_at_terminal"
-                self.wait_timer = 3.0 -- Wartezeit am Terminal
+                
+                if self.passenger then
+                    -- Passenger on board: continue to next terminal after short wait
+                    self.state = "waiting_at_terminal"
+                    self.wait_timer = 1.0
+                else
+                    -- No passenger: wait longer at terminal
+                    self.state = "waiting_at_terminal"
+                    self.wait_timer = 3.0
+                end
                 
                 -- Nachricht an Spieler in der Nähe
                 local players = minetest.get_objects_inside_radius(pos, 10)
@@ -267,19 +281,14 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     end
                 end
                 
-            elseif self.state == "moving_with_passenger" then
-                -- Passagier aussteigen lassen
-                if self.passenger then
+                -- Let passenger out if arrived at destination
+                if self.passenger and self.state == "waiting_at_terminal" then
                     local pname = self.passenger:get_player_name()
                     minetest.chat_send_player(pname, "Du bist am Ziel angekommen!")
+                    self.passenger:set_attach(nil)
+                    self.passenger:set_eye_offset({x=0, y=0, z=0}, {x=0, y=0, z=0})
                     self.passenger = nil
                 end
-                
-                -- Store current as previous before setting new current
-                self.previous_terminal = self.current_terminal
-                self.current_terminal = self.target_pos
-                self.state = "waiting_at_terminal"
-                self.wait_timer = 2.0
             end
             return
         end
@@ -321,6 +330,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         if self.passenger and self.passenger:get_player_name() == clicker:get_player_name() then
             -- Aussteigen
             minetest.chat_send_player(clicker:get_player_name(), "Du bist ausgestiegen.")
+            clicker:set_attach(nil)
+            clicker:set_eye_offset({x=0, y=0, z=0}, {x=0, y=0, z=0})
             self.passenger = nil
         elseif not self.passenger then
             -- Einsteigen wenn in der Nähe (larger drone = larger interaction range)
@@ -328,6 +339,9 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             local clicker_pos = clicker:get_pos()
             if vector.distance(pos, clicker_pos) < 4 then
                 self.passenger = clicker
+                -- Attach player to drone
+                clicker:set_attach(self.object, "", {x=0, y=1.5, z=0}, {x=0, y=0, z=0})
+                clicker:set_eye_offset({x=0, y=5, z=0}, {x=0, y=0, z=0})
                 minetest.chat_send_player(clicker:get_player_name(), "Du bist eingestiegen!")
             end
         end
