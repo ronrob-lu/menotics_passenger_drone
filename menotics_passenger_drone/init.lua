@@ -130,14 +130,17 @@ local function is_position_safe(pos)
     local def = minetest.registered_nodes[node.name]
     
     if def and def.walkable then
+        debug_log("Position unsafe: block above is walkable: " .. tostring(node.name))
         return false
     end
     
     local term_node = minetest.get_node(pos)
     if term_node.name ~= "menotics_passenger_drone:terminal" then
+        debug_log("Position unsafe: not a terminal, got: " .. tostring(term_node.name))
         return false
     end
     
+    debug_log("Position safe: terminal at " .. minetest.pos_to_string(pos))
     return true
 end
 
@@ -185,8 +188,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         textures = {
             "menotics_drone_side.png",   -- right (+x)
             "menotics_drone_side.png",   -- left (-x)
-            "menotics_drone_back.png",   -- back (-z)
             "menotics_drone_front.png",  -- front (+z)
+            "menotics_drone_back.png",   -- back (-z)
             "menotics_drone_roof.png",   -- top (+y)
             "menotics_drone_bottom.png", -- bottom (-y)
         },
@@ -214,7 +217,14 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         
         local pos = self.object:get_pos()
         if pos then
+            debug_log("=== DRONE ACTIVATED ===")
             debug_log("Drone activated at " .. minetest.pos_to_string(pos))
+            
+            -- Force terminal cache refresh on activate
+            terminal_cache = find_terminals(pos)
+            last_terminal_update = minetest.get_us_time()
+            debug_log("Found " .. #terminal_cache .. " terminals in cache")
+            
             local nearest, dist = find_nearest_terminal(pos)
             if nearest then
                 self.current_terminal = nearest
@@ -226,12 +236,12 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     self.waiting = true
                     self.wait_timer = 20 -- 20 seconds wait time
                     self.state = "waiting"
-                    debug_log("Drone state: waiting for " .. self.wait_timer .. "s")
+                    debug_log("=== DRONE STATE: WAITING FOR " .. self.wait_timer .. "s ===")
                 else
-                    debug_log("No valid hover position found")
+                    debug_log("No valid hover position found - will stay idle")
                 end
             else
-                debug_log("No terminals found near drone")
+                debug_log("No terminals found near drone - will stay idle")
             end
         else
             debug_log("Drone activated but no position available")
@@ -254,14 +264,14 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             end
         end
         
-        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos))
+        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos) .. ", timer=" .. tostring(self.wait_timer))
         
         -- State machine
         if self.state == "waiting" then
             self.wait_timer = self.wait_timer - dtime
             
             if self.wait_timer <= 0 then
-                debug_log("Wait timer expired, starting movement")
+                debug_log("=== WAIT TIMER EXPIRED, STARTING MOVEMENT ===")
                 -- Wait time over, start moving to next terminal
                 self.waiting = false
                 self.state = "moving_to_terminal"
@@ -281,6 +291,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                             local speed = 3 -- blocks per second
                             local velocity = vector.multiply(dir, speed)
                             self.object:set_velocity(velocity)
+                            debug_log("Set velocity to: " .. minetest.pos_to_string(velocity))
                             minetest.chat_send_all("[Drone] Departing to next terminal")
                         else
                             debug_log("No direction vector to target")
@@ -306,6 +317,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                                 local speed = 3
                                 local velocity = vector.multiply(dir, speed)
                                 self.object:set_velocity(velocity)
+                                debug_log("Returning to current terminal with velocity: " .. minetest.pos_to_string(velocity))
                                 self.state = "moving_to_terminal"
                             else
                                 self.state = "waiting"
@@ -346,6 +358,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                                 local speed = 2 -- Slower when rerouting
                                 local velocity = vector.multiply(dir, speed)
                                 self.object:set_velocity(velocity)
+                                debug_log("Rerouted with velocity: " .. minetest.pos_to_string(velocity))
                                 minetest.chat_send_all("[Drone] Rerouted to alternative position")
                             end
                         else
