@@ -52,15 +52,16 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         collide_with_objects = true,
         collisionbox = {-2, -1.5, -1.5, 2, 1.5, 1.5},  -- 4 wide, 3 tall, 3 deep
         selectionbox = {-2.1, -1.6, -1.6, 2.1, 1.6, 1.6},
-        visual = "mesh",
-        mesh = "menotics_drone.b3d",
+        visual = "cube",
         textures = {
-            "menotics_drone_side.png",
-            "menotics_drone_back.png", 
-            "menotics_drone_bottom.png",
-            "menotics_drone_front.png",
-            "menotics_drone_roof.png"
+            "menotics_drone_side.png",      -- right
+            "menotics_drone_side.png",      -- left
+            "menotics_drone_roof.png",      -- top
+            "menotics_drone_bottom.png",    -- bottom
+            "menotics_drone_front.png",     -- front
+            "menotics_drone_back.png",      -- back
         },
+        visual_size = {x=4, y=3, z=3},
         automatic_rotate = 0,
         stepheight = 0.6,
         falls = false,
