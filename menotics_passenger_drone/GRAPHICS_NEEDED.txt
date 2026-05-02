@@ -1,89 +1,90 @@
-# Graphics Assets Needed for menotics_passenger_drone Mod
+# Graphics Assets Needed for Menotics Passenger Drone Mod
 
-## Required Texture Files
+## Required Texture Files (6 PNG files total)
 
-### 1. Drone Texture (PRIMARY)
-**File:** `menotics-passenger.png`
-- **Recommended Size:** 512x384 pixels (or any 4:3 ratio like 256x192, 128x96)
-- **Description:** This is the main texture for the drone entity. Since the drone is 4 blocks long and 3 blocks high with glass surfaces, consider:
-  - A futuristic vehicle design with transparent/glass sections
-  - You can see passengers inside (show silhouettes or interior details)
-  - Metallic frame with glass windows
-  - Maybe some glowing elements (lights, engines)
-  - The texture wraps around a 3D model, so design accordingly
+Place these files in the `textures/` folder of the mod:
 
-### 2. Terminal Block Texture
-**File:** `terminal.png`
-- **Size:** 16x16 pixels (standard Minetest node texture)
-- **Description:** Texture for the 1x1 terminal block where drones dock
-  - Consider a landing pad design
-  - Maybe glowing indicators or markings
-  - Futuristic/technological appearance
-  - Could have a "T" or target-like marking for landing zone
+### 1. menotics_drone_front.png
+- **Purpose**: Front face of the drone (narrow end, shows cockpit/glass area)
+- **Recommended Size**: 64x64 or 128x128 pixels
+- **Design Notes**: 
+  - Should show a glass/metal frame design
+  - Include transparent or semi-transparent areas to show passengers inside
+  - Consider adding lights or indicators
+  - This is the narrow front face (drone is 4 blocks long, this is the 2-block wide end)
 
-### 3. Invisible Texture (OPTIONAL - already exists in most games)
-**File:** `invisible.png`
-- **Size:** 16x16 pixels
-- **Description:** Used for the invisible terminal tracking entity
-- **Note:** Most Minetest games already have this texture (completely transparent)
+### 2. menotics_drone_back.png
+- **Purpose**: Rear face of the drone (narrow end)
+- **Recommended Size**: 64x64 or 128x128 pixels
+- **Design Notes**:
+  - Could show engines, thrusters, or exhaust
+  - Match the style of the front texture
+  - Same dimensions as front (narrow 2-block wide face)
 
-## 3D Model File
+### 3. menotics_drone_side.png
+- **Purpose**: Both left and right sides of the drone (same texture used for both)
+- **Recommended Size**: 128x64 or 256x128 pixels (wider since drone is 4 blocks long)
+- **Design Notes**:
+  - This is the main visible surface when drone is moving
+  - Show large glass panels to see passengers inside
+  - Add structural frames between glass sections
+  - Consider adding windows divided into sections matching the 4-block length
+  - Include details like doors, vents, or decorative elements
 
-### Drone Model
-**File:** `menotics_drone.b3d`
-- **Format:** Blender exported as .b3d (Minetest's preferred format)
-- **Dimensions:** Should represent a 4-block long, 3-block high vehicle
-  - Approximately 4 meters long (X-axis)
-  - 3 meters tall (Y-axis)
-  - 1-2 meters wide (Z-axis)
-- **Design Suggestions:**
-  - Elongated vehicle shape
-  - Glass cockpit/cabin area where passengers are visible
-  - Landing gear or hover elements on bottom
-  - Consider adding animation bones for:
-    - Rotating propellers/fans (if applicable)
-    - Opening doors
-    - Moving parts
+### 4. menotics_drone_roof.png
+- **Purpose**: Top surface of the drone
+- **Recommended Size**: 128x64 or 256x128 pixels (4 blocks long, 2 blocks wide)
+- **Design Notes**:
+  - Show the roof structure
+  - Could include antennas, lights, or ventilation
+  - Match the metallic/glass aesthetic
+  - Same proportions as the side (4 blocks long x 2 blocks wide)
 
-## Alternative: Using Cube Mesh
+### 5. menotics_drone_bottom.png
+- **Purpose**: Bottom/underside of the drone
+- **Recommended Size**: 128x64 or 256x128 pixels (4 blocks long, 2 blocks wide)
+- **Design Notes**:
+  - Show landing gear, thrusters, or mechanical details
+  - Could have a darker, more industrial look
+  - Same proportions as the side (4 blocks long x 2 blocks wide)
 
-If you don't want to create a custom 3D model immediately, you can modify the init.lua to use a simple cube mesh with multiple textures. The current code uses a mesh, but you could change it to:
+## Important Notes
 
-```lua
-visual = "cube",
-textures = {"menotics-passenger-side.png", "menotics-passenger-side.png", 
-            "menotics-passenger-top.png", "menotics-passenger-bottom.png",
-            "menotics-passenger-front.png", "menotics-passenger-back.png"},
-```
+### No 3D Model Required!
+This mod uses Minetest's built-in "cube" visual type with custom dimensions.
+The drone will be rendered as a stretched box with your textures applied to each face.
+Dimensions: 4 blocks long (X), 3 blocks high (Y), 2 blocks wide (Z)
 
-This would require creating 6 separate texture files but no 3D modeling.
+### Glass Effect for Passengers
+To make passengers visible:
+- Use semi-transparent PNG files with alpha channel
+- The glass areas should be partially transparent (alpha ~100-150)
+- Consider using a tinted blue or cyan color for the glass
+- Frame the glass with opaque metal borders
+- Players inside will be visible through the transparent parts!
 
-## Art Style Recommendations
+### Terminal Block
+- **terminal.png** already exists in the default game textures (as you mentioned)
+- No additional graphics needed for terminals
 
-Since this is a passenger drone with glass surfaces where you can see who's inside:
+## File Checklist
+- [ ] textures/menotics_drone_front.png
+- [ ] textures/menotics_drone_back.png
+- [ ] textures/menotics_drone_side.png
+- [ ] textures/menotics_drone_roof.png
+- [ ] textures/menotics_drone_bottom.png
 
-1. **Transparency:** Use alpha channel (transparency) for glass sections
-2. **Interior Details:** Add seat outlines or passenger silhouettes
-3. **Lighting:** Add emissive/glowing parts for lights and displays
-4. **Color Scheme:** Consider:
-   - White/silver body with blue-tinted glass (clean, futuristic)
-   - Yellow/black (industrial, caution)
-   - Your choice based on your game's aesthetic
+## Suggested Color Scheme
+- Primary: Metallic gray/silver for frames
+- Secondary: Light blue or cyan tint for glass panels (semi-transparent!)
+- Accent: Orange or red for lights/indicators
+- Dark gray for underside/mechanical parts
 
-## File Placement
-
-All texture files should be placed in:
-```
-menotics_passenger_drone/textures/
-├── menotics-passenger.png
-├── terminal.png
-└── invisible.png (if needed)
-```
-
-The model file should be placed in:
-```
-menotics_passenger_drone/models/
-└── menotics_drone.b3d
-```
-
-Note: You'll need to create the `models` folder if using a custom mesh.
+## Texture Mapping on Cube
+The cube visual maps textures in this order:
+1. Right side (menotics_drone_side.png)
+2. Left side (menotics_drone_side.png) - same texture
+3. Top/Roof (menotics_drone_roof.png)
+4. Bottom (menotics_drone_bottom.png)
+5. Front (menotics_drone_front.png)
+6. Back (menotics_drone_back.png)
