@@ -195,9 +195,10 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         },
         pointable = true,
         static_save = true,
-        glow = 5,
+        glow = 8,
         visual_size = {x = 4, y = 3, z = 2}, -- 4 blocks long, 3 high, 2 wide
         backface_culling = false, -- Allow seeing textures from inside (for transparent PNGs)
+        use_texture_alpha = true, -- Enable alpha transparency for textures
     },
     
     driver = nil,
@@ -225,23 +226,25 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             last_terminal_update = minetest.get_us_time()
             debug_log("Found " .. #terminal_cache .. " terminals in cache")
             
+            -- Find nearest terminal
             local nearest, dist = find_nearest_terminal(pos)
             if nearest then
                 self.current_terminal = nearest
                 debug_log("Found nearest terminal at " .. minetest.pos_to_string(nearest) .. " (dist: " .. tostring(dist) .. ")")
-                local hover_pos = get_target_hover_pos(nearest)
-                if hover_pos then
-                    debug_log("Setting hover position to " .. minetest.pos_to_string(hover_pos))
-                    self.object:set_pos(hover_pos)
-                    self.waiting = true
-                    self.wait_timer = 20 -- 20 seconds wait time
-                    self.state = "waiting"
-                    debug_log("=== DRONE STATE: WAITING FOR " .. self.wait_timer .. "s ===")
-                else
-                    debug_log("No valid hover position found - will stay idle")
-                end
+                
+                -- Set hover position directly above the terminal
+                local hover_pos = vector.new(nearest.x, nearest.y + 1, nearest.z)
+                debug_log("Setting hover position to " .. minetest.pos_to_string(hover_pos))
+                self.object:set_pos(hover_pos)
+                self.object:set_velocity(vector.new(0, 0, 0))
+                
+                self.waiting = true
+                self.wait_timer = 5 -- 5 seconds wait time (shorter for testing)
+                self.state = "waiting"
+                debug_log("=== DRONE STATE: WAITING FOR " .. self.wait_timer .. "s ===")
             else
                 debug_log("No terminals found near drone - will stay idle")
+                minetest.chat_send_all("[Drone] No terminals found - place terminal blocks nearby")
             end
         else
             debug_log("Drone activated but no position available")
@@ -264,11 +267,22 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             end
         end
         
-        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos) .. ", timer=" .. tostring(self.wait_timer))
+        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos) .. ", timer=" .. tostring(self.wait_timer) .. ", velocity=" .. minetest.pos_to_string(self.object:get_velocity()))
         
         -- State machine
         if self.state == "waiting" then
             self.wait_timer = self.wait_timer - dtime
+            
+            -- Maintain hover position while waiting
+            if self.current_terminal then
+                local expected_hover = vector.new(self.current_terminal.x, self.current_terminal.y + 1, self.current_terminal.z)
+                local dist_from_hover = vector.distance(pos, expected_hover)
+                if dist_from_hover > 0.3 then
+                    debug_log("Drift detected, correcting position from " .. minetest.pos_to_string(pos) .. " to " .. minetest.pos_to_string(expected_hover))
+                    self.object:set_pos(expected_hover)
+                    self.object:set_velocity(vector.new(0, 0, 0))
+                end
+            end
             
             if self.wait_timer <= 0 then
                 debug_log("=== WAIT TIMER EXPIRED, STARTING MOVEMENT ===")
@@ -276,8 +290,28 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 self.waiting = false
                 self.state = "moving_to_terminal"
                 
-                -- Find next terminal (skip current one)
-                local next_terminal = find_nearest_terminal(pos, self.current_terminal)
+                -- Find ALL terminals and pick one that's not current
+                local all_terminals = get_terminals_cached()
+                debug_log("Total terminals found: " .. #all_terminals)
+                
+                local next_terminal = nil
+                if #all_terminals >= 2 then
+                    -- Pick a random terminal that's not the current one
+                    local candidates = {}
+                    for _, term in ipairs(all_terminals) do
+                        if not self.current_terminal or not vector.equals(term, self.current_terminal) then
+                            table.insert(candidates, term)
+                        end
+                    end
+                    if #candidates > 0 then
+                        next_terminal = candidates[math.random(1, #candidates)]
+                        debug_log("Selected next terminal: " .. minetest.pos_to_string(next_terminal))
+                    end
+                elseif #all_terminals == 1 then
+                    -- Only one terminal exists, go back to it after leaving
+                    next_terminal = all_terminals[1]
+                    debug_log("Only one terminal, will return to: " .. minetest.pos_to_string(next_terminal))
+                end
                 
                 if next_terminal then
                     local hover_pos = get_target_hover_pos(next_terminal)
@@ -304,32 +338,9 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                         self.state = "idle"
                     end
                 else
-                    debug_log("No other terminals available")
-                    -- No other terminals, go back to current/only terminal
-                    minetest.chat_send_all("[Drone] No other terminals available")
-                    
-                    if self.current_terminal then
-                        local hover_pos = get_target_hover_pos(self.current_terminal)
-                        if hover_pos and not vector.equals(pos, hover_pos) then
-                            self.target_pos = hover_pos
-                            local dir = vector.direction(pos, hover_pos)
-                            if dir then
-                                local speed = 3
-                                local velocity = vector.multiply(dir, speed)
-                                self.object:set_velocity(velocity)
-                                debug_log("Returning to current terminal with velocity: " .. minetest.pos_to_string(velocity))
-                                self.state = "moving_to_terminal"
-                            else
-                                self.state = "waiting"
-                                self.wait_timer = 20
-                            end
-                        else
-                            self.state = "waiting"
-                            self.wait_timer = 20
-                        end
-                    else
-                        self.state = "idle"
-                    end
+                    debug_log("No terminals available at all")
+                    minetest.chat_send_all("[Drone] No terminals available")
+                    self.state = "idle"
                 end
             end
         elseif self.state == "moving_to_terminal" then
