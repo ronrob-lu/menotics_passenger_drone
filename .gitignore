@@ -1,1 +1,40 @@
-Nothing should be ignored based on the provided file changes. The only modified file is a Lua source file (`menotics_passenger_drone/init.lua`), which should not be added to .gitignore.
+```
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+
+# Dependencies
+node_modules/
+venv/
+.venv/
+.env
+.env.local
+*.env.*
+
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+
+# Editors
+.vscode/
+.idea/
+
+# Build directories
+dist/
+build/
+target/
+
+# Coverage reports
+coverage/
+htmlcov/
+.coverage
+
+# Python specific
+.mypy_cache/
+.pytest_cache/
+
+# System files
+.DS_Store
+Thumbs.db
+```
