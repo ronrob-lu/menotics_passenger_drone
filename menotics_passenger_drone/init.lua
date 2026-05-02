@@ -11,7 +11,12 @@ minetest.register_node("menotics_passenger_drone:terminal", {
     paramtype2 = "facedir",
     is_ground_content = false,
     groups = {cracky = 3},
-    sounds = default.node_sound_metal_sounds() or {
+    sounds = (default and default.node_sound_metal_sounds) and (default.node_sound_metal_sounds() or {
+        footstep = {name = "default_metal_footstep", gain = 1.0},
+        dig = {name = "default_metal_footstep", gain = 1.0},
+        dug = {name = "default_metal_footstep", gain = 1.0},
+        place = {name = "default_place_node_metal", gain = 1.0},
+    }) or {
         footstep = {name = "default_metal_footstep", gain = 1.0},
         dig = {name = "default_metal_footstep", gain = 1.0},
         dug = {name = "default_metal_footstep", gain = 1.0},
