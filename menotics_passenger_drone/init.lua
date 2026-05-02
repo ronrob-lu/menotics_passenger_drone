@@ -11,10 +11,10 @@ local CHECK_INTERVAL = 1.0
 -- Temporäre Speicherung für Drohnen-Daten
 local drone_data = {}
 
--- Terminal-Block Definition
+-- Terminal-Block Definition (uses single texture, no 3D model)
 minetest.register_node("menotics_passenger_drone:terminal", {
     description = "Passenger Drone Terminal",
-    tiles = {"menotics_terminal_top.png", "menotics_terminal_bottom.png", "menotics_terminal_side.png"},
+    tiles = {"terminal.png"},
     paramtype2 = "facedir",
     groups = {cracky = 3},
     is_ground_content = false,
@@ -44,26 +44,28 @@ minetest.register_node("menotics_passenger_drone:terminal", {
     end,
 })
 
--- Drohne als Entity
+-- Drohne als Entity (4x3x3 blocks size)
 minetest.register_entity("menotics_passenger_drone:drone", {
     initial_properties = {
         hp_max = 100,
         physical = true,
         collide_with_objects = true,
-        collisionbox = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5},
-        selectionbox = {-0.6, -0.6, -0.6, 0.6, 0.6, 0.6},
+        collisionbox = {-2, -1.5, -1.5, 2, 1.5, 1.5},  -- 4 wide, 3 tall, 3 deep
+        selectionbox = {-2.1, -1.6, -1.6, 2.1, 1.6, 1.6},
         visual = "sprite",
         textures = {"menotics_drone.png"},
         automatic_rotate = false,
         stepheight = 0.6,
         falls = false,
         luminance = 5,
+        visual_size = {x=4, y=3},  -- Scale sprite to match 4x3 block size
     },
     
     on_activate = function(self, staticdata, dtime_s)
         self.state = "idle"
         self.target_pos = nil
         self.current_terminal = nil
+        self.previous_terminal = nil  -- Track previous terminal to skip it
         self.passenger = nil
         self.wait_timer = 0
         self.path_index = 1
@@ -75,6 +77,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             if data then
                 self.state = data.state or "idle"
                 self.current_terminal = data.current_terminal
+                self.previous_terminal = data.previous_terminal
                 self.wait_timer = data.wait_timer or 0
             end
         end
@@ -86,6 +89,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         local data = {
             state = self.state,
             current_terminal = self.current_terminal,
+            previous_terminal = self.previous_terminal,
             wait_timer = self.wait_timer,
         }
         return minetest.serialize(data)
@@ -169,7 +173,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         local pos = self.object:get_pos()
         if not pos then return end
         
-        -- Suche nach anderen Terminals (nicht dem aktuellen)
+        -- Suche nach anderen Terminals (nicht dem aktuellen und nicht dem vorherigen)
         local minp = vector.subtract(pos, DRONE_RANGE)
         local maxp = vector.add(pos, DRONE_RANGE)
         
@@ -180,9 +184,12 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     local node = minetest.get_node({x=x, y=y, z=z})
                     if node.name == "menotics_passenger_drone:terminal" then
                         local term_pos = {x=x, y=y+1, z=z}
-                        -- Nicht das aktuelle Terminal
-                        if not self.current_terminal or 
-                           vector.distance(term_pos, self.current_terminal) > 2 then
+                        -- Nicht das aktuelle Terminal und nicht das vorherige
+                        local is_current = self.current_terminal and 
+                                           vector.distance(term_pos, self.current_terminal) < 2
+                        local is_previous = self.previous_terminal and 
+                                            vector.distance(term_pos, self.previous_terminal) < 2
+                        if not is_current and not is_previous then
                             table.insert(terminals, term_pos)
                         end
                     end
@@ -191,7 +198,23 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         end
         
         if #terminals > 0 then
-            local target = terminals[math.random(#terminals)]
+            local target
+            -- If only two terminals exist, go to the other one
+            -- If more than two, pick the nearest one
+            if #terminals == 1 then
+                target = terminals[1]
+            else
+                -- Find nearest terminal
+                local min_dist = math.huge
+                for _, t in ipairs(terminals) do
+                    local dist = vector.distance(pos, t)
+                    if dist < min_dist then
+                        min_dist = dist
+                        target = t
+                    end
+                end
+            end
+            
             self.target_pos = target
             
             if self.passenger then
@@ -222,6 +245,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         -- Ziel erreicht?
         if distance < 1.5 then
             if self.state == "moving_to_terminal" then
+                -- Store current as previous before setting new current
+                self.previous_terminal = self.current_terminal
                 self.current_terminal = self.target_pos
                 self.state = "waiting_at_terminal"
                 self.wait_timer = 3.0 -- Wartezeit am Terminal
@@ -243,6 +268,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     self.passenger = nil
                 end
                 
+                -- Store current as previous before setting new current
+                self.previous_terminal = self.current_terminal
                 self.current_terminal = self.target_pos
                 self.state = "waiting_at_terminal"
                 self.wait_timer = 2.0
