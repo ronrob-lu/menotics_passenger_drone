@@ -38,28 +38,52 @@ minetest.register_node("menotics_passenger_drone:terminal", {
 -- Helper function to find all terminal blocks
 local function find_terminals()
     local terminals = {}
+    local found_set = {} -- Track found positions to avoid duplicates
     
-    -- Try to get mapgen limits, fallback to searching around active players/drone if unavailable
-    local minp, maxp
-    if minetest.get_mapgen_limit then
-        minp, maxp = minetest.get_mapgen_limit()
-    else
-        -- Fallback: search within a large but reasonable area around spawn (0,0,0)
-        -- This covers most typical use cases
-        local search_radius = 5000
-        minp = vector.new(-search_radius, -search_radius, -search_radius)
-        maxp = vector.new(search_radius, search_radius, search_radius)
-    end
+    -- Search in smaller chunks to avoid exceeding area volume limit (150,000,000 nodes)
+    -- Each chunk is 2000x2000x2000 = 8,000,000 nodes (well under the limit)
+    local chunk_size = 2000
+    local search_radius = 4000 -- Total search area: 8000x8000x8000
     
-    local pos_list = minetest.find_nodes_in_area(
-        vector.new(minp.x, minp.y, minp.z),
-        vector.new(maxp.x, maxp.y, maxp.z),
-        "menotics_passenger_drone:terminal",
-        false
-    )
+    local minp_global = vector.new(-search_radius, -search_radius, -search_radius)
+    local maxp_global = vector.new(search_radius, search_radius, search_radius)
     
-    for _, pos in ipairs(pos_list) do
-        table.insert(terminals, vector.new(pos))
+    -- Iterate through chunks
+    for x = minp_global.x, maxp_global.x, chunk_size do
+        for y = minp_global.y, maxp_global.y, chunk_size do
+            for z = minp_global.z, maxp_global.z, chunk_size do
+                local chunk_minp = vector.new(x, y, z)
+                local chunk_maxp = vector.new(
+                    math.min(x + chunk_size - 1, maxp_global.x),
+                    math.min(y + chunk_size - 1, maxp_global.y),
+                    math.min(z + chunk_size - 1, maxp_global.z)
+                )
+                
+                local pos_list = minetest.find_nodes_in_area(
+                    chunk_minp,
+                    chunk_maxp,
+                    "menotics_passenger_drone:terminal",
+                    false
+                )
+                
+                for _, pos in ipairs(pos_list) do
+                    local key = pos.x .. "," .. pos.y .. "," .. pos.z
+                    if not found_set[key] then
+                        found_set[key] = true
+                        table.insert(terminals, vector.new(pos))
+                    end
+                end
+                
+                -- Stop early if we already have at least 2 terminals
+                if #terminals >= 2 then
+                    goto continue_outer
+                end
+            end
+        end
+        ::continue_outer::
+        if #terminals >= 2 then
+            break
+        end
     end
     
     return terminals
