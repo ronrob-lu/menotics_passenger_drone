@@ -52,13 +52,19 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         collide_with_objects = true,
         collisionbox = {-2, -1.5, -1.5, 2, 1.5, 1.5},  -- 4 wide, 3 tall, 3 deep
         selectionbox = {-2.1, -1.6, -1.6, 2.1, 1.6, 1.6},
-        visual = "sprite",
-        textures = {"menotics_drone.png"},
-        automatic_rotate = false,
+        visual = "mesh",
+        mesh = "menotics_drone.b3d",
+        textures = {
+            "menotics_drone_side.png",
+            "menotics_drone_back.png", 
+            "menotics_drone_bottom.png",
+            "menotics_drone_front.png",
+            "menotics_drone_roof.png"
+        },
+        automatic_rotate = 0,
         stepheight = 0.6,
         falls = false,
         luminance = 5,
-        visual_size = {x=4, y=3},  -- Scale sprite to match 4x3 block size
     },
     
     on_activate = function(self, staticdata, dtime_s)
@@ -293,7 +299,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         if not pos then return {} end
         
         local players = {}
-        local objects = minetest.get_objects_inside_radius(pos, 2.0)
+        local objects = minetest.get_objects_inside_radius(pos, 3.0)
         
         for _, obj in ipairs(objects) do
             if obj:is_player() then
@@ -316,10 +322,10 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             minetest.chat_send_player(clicker:get_player_name(), "Du bist ausgestiegen.")
             self.passenger = nil
         elseif not self.passenger then
-            -- Einsteigen wenn in der Nähe
+            -- Einsteigen wenn in der Nähe (larger drone = larger interaction range)
             local pos = self.object:get_pos()
             local clicker_pos = clicker:get_pos()
-            if vector.distance(pos, clicker_pos) < 3 then
+            if vector.distance(pos, clicker_pos) < 4 then
                 self.passenger = clicker
                 minetest.chat_send_player(clicker:get_player_name(), "Du bist eingestiegen!")
             end
