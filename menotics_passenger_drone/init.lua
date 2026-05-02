@@ -4,6 +4,16 @@
 
 local S = minetest.get_translator("menotics_passenger_drone")
 
+-- Debug flag for verbose logging
+local DEBUG = true
+
+local function debug_log(msg)
+    if DEBUG then
+        minetest.chat_send_all("[Drone DEBUG] " .. msg)
+        minetest.log("action", "[Drone DEBUG] " .. msg)
+    end
+end
+
 -- Terminal block definition (solid, non-passable)
 minetest.register_node("menotics_passenger_drone:terminal", {
     description = S("Passenger Drone Terminal"),
@@ -173,10 +183,10 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         stepheight = 1.0,
         visual = "cube",
         textures = {
-            "menotics_drone_front.png",  -- front (+x)
-            "menotics_drone_back.png",   -- back (-x)
-            "menotics_drone_side.png",   -- right (+z)
-            "menotics_drone_side.png",   -- left (-z)
+            "menotics_drone_side.png",   -- right (+x)
+            "menotics_drone_side.png",   -- left (-x)
+            "menotics_drone_back.png",   -- back (-z)
+            "menotics_drone_front.png",  -- front (+z)
             "menotics_drone_roof.png",   -- top (+y)
             "menotics_drone_bottom.png", -- bottom (-y)
         },
@@ -184,6 +194,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         static_save = true,
         glow = 5,
         visual_size = {x = 4, y = 3, z = 2}, -- 4 blocks long, 3 high, 2 wide
+        backface_culling = false, -- Allow seeing textures from inside (for transparent PNGs)
     },
     
     driver = nil,
@@ -203,17 +214,27 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         
         local pos = self.object:get_pos()
         if pos then
-            local nearest, _ = find_nearest_terminal(pos)
+            debug_log("Drone activated at " .. minetest.pos_to_string(pos))
+            local nearest, dist = find_nearest_terminal(pos)
             if nearest then
                 self.current_terminal = nearest
+                debug_log("Found nearest terminal at " .. minetest.pos_to_string(nearest) .. " (dist: " .. tostring(dist) .. ")")
                 local hover_pos = get_target_hover_pos(nearest)
                 if hover_pos then
+                    debug_log("Setting hover position to " .. minetest.pos_to_string(hover_pos))
                     self.object:set_pos(hover_pos)
                     self.waiting = true
                     self.wait_timer = 20 -- 20 seconds wait time
                     self.state = "waiting"
+                    debug_log("Drone state: waiting for " .. self.wait_timer .. "s")
+                else
+                    debug_log("No valid hover position found")
                 end
+            else
+                debug_log("No terminals found near drone")
             end
+        else
+            debug_log("Drone activated but no position available")
         end
     end,
     
@@ -227,16 +248,20 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         if self.driver then
             local player = minetest.get_player_by_name(self.driver)
             if not player or not player:get_attach() then
+                debug_log("Passenger disconnected: " .. tostring(self.driver))
                 minetest.chat_send_all("[Drone] Passenger disconnected")
                 self.driver = nil
             end
         end
+        
+        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos))
         
         -- State machine
         if self.state == "waiting" then
             self.wait_timer = self.wait_timer - dtime
             
             if self.wait_timer <= 0 then
+                debug_log("Wait timer expired, starting movement")
                 -- Wait time over, start moving to next terminal
                 self.waiting = false
                 self.state = "moving_to_terminal"
@@ -249,6 +274,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     if hover_pos then
                         self.target_pos = hover_pos
                         self.current_terminal = next_terminal
+                        debug_log("Moving to terminal at " .. minetest.pos_to_string(hover_pos))
                         
                         local dir = vector.direction(pos, hover_pos)
                         if dir then
@@ -257,14 +283,17 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                             self.object:set_velocity(velocity)
                             minetest.chat_send_all("[Drone] Departing to next terminal")
                         else
+                            debug_log("No direction vector to target")
                             self.state = "waiting"
                             self.wait_timer = 20
                         end
                     else
+                        debug_log("No valid hover position for next terminal")
                         minetest.chat_send_all("[Drone] No valid path to terminal")
                         self.state = "idle"
                     end
                 else
+                    debug_log("No other terminals available")
                     -- No other terminals, go back to current/only terminal
                     minetest.chat_send_all("[Drone] No other terminals available")
                     
@@ -300,6 +329,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 
                 if dist_to_target > 1 then
                     -- Collision detected! Try alternate path
+                    debug_log("Collision detected, finding alternate path")
                     minetest.chat_send_all("[Drone] Collision detected, finding alternate path")
                     
                     self.object:set_velocity(vector.new(0, 0, 0))
@@ -325,6 +355,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                     end
                 else
                     -- Close enough to target
+                    debug_log("Arrived at target (close)")
                     self.object:set_pos(self.target_pos)
                     self.object:set_velocity(vector.new(0, 0, 0))
                     self.target_pos = nil
@@ -338,6 +369,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 local dist_to_target = vector.distance(pos, self.target_pos)
                 
                 if dist_to_target < 0.5 then
+                    debug_log("Arrived at target (within 0.5)")
                     self.object:set_pos(self.target_pos)
                     self.object:set_velocity(vector.new(0, 0, 0))
                     self.target_pos = nil
@@ -365,6 +397,8 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         
         local player_name = clicker:get_player_name()
         
+        debug_log("Drone rightclicked by " .. player_name .. ", driver=" .. tostring(self.driver))
+        
         -- If already driving, detach (dismount)
         if self.driver and self.driver == player_name then
             local player = minetest.get_player_by_name(player_name)
@@ -389,6 +423,7 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         end
         
         -- Attach player to drone
+        debug_log("Attaching player " .. player_name .. " to drone")
         clicker:set_attach(self.object, "", {x=0, y=1, z=0}, {x=0, y=0, z=0})
         self.driver = player_name
         minetest.chat_send_all("[Drone] " .. player_name .. " boarded")
@@ -497,3 +532,71 @@ minetest.register_abm({
 })
 
 minetest.log("action", "[menotics_passenger_drone] Mod loaded successfully")
+
+-- /clear_mdp_master command - kills all drones and deletes all terminals
+minetest.register_chatcommand("clear_mdp_master", {
+    description = "Deletes all passenger drone terminals and removes all drones",
+    func = function(name)
+        local player = minetest.get_player_by_name(name)
+        if not player then
+            return false, "Player not found"
+        end
+        
+        debug_log("Starting clear_mdp_master command by " .. name)
+        
+        -- Find and remove all drones
+        local drone_count = 0
+        for _, obj in ipairs(minetest.luaentities) do
+            if obj and obj.object and obj.object:get_luaentity() then
+                local luaentity = obj.object:get_luaentity()
+                if luaentity and luaentity.name == "menotics_passenger_drone:drone" then
+                    -- Eject any passenger first
+                    if luaentity.driver then
+                        local driver_player = minetest.get_player_by_name(luaentity.driver)
+                        if driver_player then
+                            driver_player:set_detach()
+                            minetest.chat_send_all("[Drone] " .. luaentity.driver .. " ejected (master clear)")
+                        end
+                    end
+                    obj.object:remove()
+                    drone_count = drone_count + 1
+                end
+            end
+        end
+        
+        -- Also try to find entities directly
+        local objects = minetest.get_objects_inside_radius({x=0, y=0, z=0}, 5000)
+        for _, obj in ipairs(objects) do
+            if obj and obj:get_luaentity() then
+                local luaentity = obj:get_luaentity()
+                if luaentity and luaentity.name == "menotics_passenger_drone:drone" then
+                    if luaentity.driver then
+                        local driver_player = minetest.get_player_by_name(luaentity.driver)
+                        if driver_player then
+                            driver_player:set_detach()
+                        end
+                    end
+                    obj:remove()
+                    drone_count = drone_count + 1
+                end
+            end
+        end
+        
+        -- Find and delete all terminals
+        local terminal_count = 0
+        local terminals = find_terminals({x=0, y=0, z=0})
+        for _, term_pos in ipairs(terminals) do
+            local node = minetest.get_node(term_pos)
+            if node.name == "menotics_passenger_drone:terminal" then
+                minetest.set_node(term_pos, {name="air"})
+                terminal_count = terminal_count + 1
+            end
+        end
+        
+        local msg = string.format("[Drone Master Clear] Removed %d drones and %d terminals", drone_count, terminal_count)
+        minetest.chat_send_all(msg)
+        debug_log("Clear complete: " .. drone_count .. " drones, " .. terminal_count .. " terminals")
+        
+        return true, msg
+    end,
+})
