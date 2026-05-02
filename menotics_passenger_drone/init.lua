@@ -179,11 +179,11 @@ end
 -- Drone entity definition
 minetest.register_entity("menotics_passenger_drone:drone", {
     initial_properties = {
-        physical = true,
-        collide_with_objects = true,
-        weight = 5,
-        collisionbox = {-2, -0.5, -2, 2, 1.5, 2}, -- 4 blocks long, 3 blocks high
-        stepheight = 1.0,
+        physical = false, -- Non-physical for free flying
+        collide_with_objects = false, -- Disable collision to allow free movement
+        weight = 0, -- No weight for flying drone
+        collisionbox = {-0.01, -0.01, -0.01, 0.01, 0.01, 0.01}, -- Minimal collision box
+        stepheight = 0,
         visual = "cube",
         textures = {
             "menotics_drone_side.png",   -- right (+x)
@@ -198,8 +198,16 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         glow = 8,
         visual_size = {x = 4, y = 3, z = 2}, -- 4 blocks long, 3 high, 2 wide
         backface_culling = false, -- Allow seeing textures from inside (for transparent PNGs)
-        use_texture_alpha = true, -- Enable alpha transparency for textures
+        use_texture_alpha = "blend", -- Enable alpha transparency for textures (proper blend mode)
+        hp_max = 999999, -- Nearly immortal
+        armor_groups = {immortal = 1},
+        automatic_rotate = false, -- Don't rotate automatically
     },
+    
+    -- Override acceleration to zero for direct velocity control
+    acceleration = {x = 0, y = 0, z = 0},
+    max_drop = 0,
+    max_push = 0,
     
     driver = nil,
     target_pos = nil,
@@ -267,7 +275,12 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             end
         end
         
-        debug_log("on_step: state=" .. self.state .. ", pos=" .. minetest.pos_to_string(pos) .. ", timer=" .. tostring(self.wait_timer) .. ", velocity=" .. minetest.pos_to_string(self.object:get_velocity()))
+        -- CRITICAL DEBUG: Log every step with full state info
+        local vel = self.object:get_velocity()
+        local yaw = self.object:get_yaw() or 0
+        debug_log(string.format("on_step: state=%s, pos=(%.1f,%.1f,%.1f), timer=%.2f, velocity=(%.2f,%.2f,%.2f), yaw=%.2f, current_terminal=%s", 
+            self.state, pos.x, pos.y, pos.z, self.wait_timer, vel.x, vel.y, vel.z, yaw,
+            self.current_terminal and "SET" or "NIL"))
         
         -- State machine
         if self.state == "waiting" then
@@ -324,8 +337,22 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                         if dir then
                             local speed = 3 -- blocks per second
                             local velocity = vector.multiply(dir, speed)
+                            debug_log("About to set velocity to: " .. minetest.pos_to_string(velocity))
+                            
+                            -- Set position directly for instant movement (no physics interference)
+                            local new_pos = vector.add(pos, velocity)
+                            self.object:set_pos(new_pos)
                             self.object:set_velocity(velocity)
-                            debug_log("Set velocity to: " .. minetest.pos_to_string(velocity))
+                            
+                            -- Also set rotation to face direction
+                            local yaw = math.atan2(dir.x, dir.z)
+                            self.object:set_yaw(yaw)
+                            
+                            -- Verify velocity was set
+                            local new_vel = self.object:get_velocity()
+                            debug_log("Set pos from " .. minetest.pos_to_string(pos) .. " to " .. minetest.pos_to_string(new_pos))
+                            debug_log("Velocity after set: " .. minetest.pos_to_string(new_vel))
+                            debug_log("Yaw set to: " .. tostring(yaw))
                             minetest.chat_send_all("[Drone] Departing to next terminal")
                         else
                             debug_log("No direction vector to target")
@@ -346,61 +373,38 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         elseif self.state == "moving_to_terminal" then
             local vel = self.object:get_velocity()
             
-            -- Check for collision (velocity near zero but haven't reached target)
-            if vector.length(vel) < 0.1 and self.target_pos then
-                local dist_to_target = vector.distance(pos, self.target_pos)
-                
-                if dist_to_target > 1 then
-                    -- Collision detected! Try alternate path
-                    debug_log("Collision detected, finding alternate path")
-                    minetest.chat_send_all("[Drone] Collision detected, finding alternate path")
-                    
-                    self.object:set_velocity(vector.new(0, 0, 0))
-                    
-                    if self.current_terminal then
-                        local alt_pos = find_alternative_hover(
-                            vector.new(self.current_terminal.x, self.current_terminal.y, self.current_terminal.z)
-                        )
-                        
-                        if alt_pos then
-                            self.target_pos = alt_pos
-                            local dir = vector.direction(pos, alt_pos)
-                            if dir then
-                                local speed = 2 -- Slower when rerouting
-                                local velocity = vector.multiply(dir, speed)
-                                self.object:set_velocity(velocity)
-                                debug_log("Rerouted with velocity: " .. minetest.pos_to_string(velocity))
-                                minetest.chat_send_all("[Drone] Rerouted to alternative position")
-                            end
-                        else
-                            self.state = "idle"
-                            minetest.chat_send_all("[Drone] Stopped - no valid path")
-                        end
-                    end
-                else
-                    -- Close enough to target
-                    debug_log("Arrived at target (close)")
-                    self.object:set_pos(self.target_pos)
-                    self.object:set_velocity(vector.new(0, 0, 0))
-                    self.target_pos = nil
-                    self.waiting = true
-                    self.wait_timer = 20
-                    self.state = "waiting"
-                    minetest.chat_send_all("[Drone] Arrived at terminal")
-                end
-            elseif self.target_pos then
-                -- Still moving, check arrival
+            -- Move continuously towards target
+            if self.target_pos then
                 local dist_to_target = vector.distance(pos, self.target_pos)
                 
                 if dist_to_target < 0.5 then
+                    -- Arrived at target
                     debug_log("Arrived at target (within 0.5)")
                     self.object:set_pos(self.target_pos)
                     self.object:set_velocity(vector.new(0, 0, 0))
                     self.target_pos = nil
                     self.waiting = true
-                    self.wait_timer = 20
+                    self.wait_timer = 5  -- Shorter wait time
                     self.state = "waiting"
                     minetest.chat_send_all("[Drone] Arrived at terminal")
+                else
+                    -- Keep moving towards target
+                    local dir = vector.direction(pos, self.target_pos)
+                    if dir then
+                        local speed = 3 -- blocks per second
+                        local velocity = vector.multiply(dir, speed)
+                        local new_pos = vector.add(pos, velocity)
+                        self.object:set_pos(new_pos)
+                        self.object:set_velocity(velocity)
+                        -- Update yaw to face direction
+                        local yaw = math.atan2(dir.x, dir.z)
+                        self.object:set_yaw(yaw)
+                    end
+                end
+            else
+                -- No target, go idle
+                self.state = "idle"
+            end
                 end
             else
                 self.state = "idle"
