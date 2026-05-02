@@ -405,10 +405,6 @@ minetest.register_entity("menotics_passenger_drone:drone", {
                 -- No target, go idle
                 self.state = "idle"
             end
-                end
-            else
-                self.state = "idle"
-            end
         elseif self.state == "idle" then
             -- Hover in place
             local vel = self.object:get_velocity()
