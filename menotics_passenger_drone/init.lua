@@ -1,223 +1,196 @@
 -- Menotics Passenger Drone Mod
--- Transfers players between terminal blocks
+-- Transfers players between terminal blocks using a glass drone vehicle
+-- No 3D model required - uses box visual with multiple textures
 
-local drone_cache = {} -- Store drone entities by position for quick lookup
+local S = minetest.get_translator("menotics_passenger_drone")
+
+-- Terminal block definition (solid, non-passable)
+minetest.register_node("menotics_passenger_drone:terminal", {
+    description = S("Passenger Drone Terminal"),
+    tiles = {"terminal.png"},
+    paramtype2 = "facedir",
+    is_ground_content = false,
+    groups = {cracky = 3},
+    sounds = default.node_sound_metal_sounds(),
+    on_place = function(itemstack, placer, pointed_thing)
+        return minetest.item_place_node(itemstack, placer, pointed_thing)
+    end,
+    after_place_node = function(pos, placer, itemstack, pointed_thing)
+        local node = minetest.get_node(pos)
+        if placer and placer:is_player() then
+            local dir = minetest.dir_to_facedir(placer:get_look_dir())
+            node.param2 = dir
+            minetest.set_node(pos, node)
+        end
+    end,
+})
 
 -- Helper function to find all terminal blocks
-local function get_terminals()
+local function find_terminals()
     local terminals = {}
-    for _, obj in ipairs(minetest.luaentities) do
-        if obj.name == "menotics_passenger_drone:terminal" then
-            table.insert(terminals, obj)
-        end
+    local minp, maxp = minetest.get_mapgen_limit()
+    
+    local pos_list = minetest.find_nodes_in_area(
+        vector.new(minp.x, minp.y, minp.z),
+        vector.new(maxp.x, maxp.y, maxp.z),
+        "menotics_passenger_drone:terminal",
+        false
+    )
+    
+    for _, pos in ipairs(pos_list) do
+        table.insert(terminals, vector.new(pos))
     end
+    
     return terminals
 end
 
--- Helper function to calculate distance between two positions
-local function get_distance(pos1, pos2)
+-- Cache for terminal positions (updated periodically)
+local terminal_cache = {}
+local last_terminal_update = 0
+
+local function get_terminals_cached()
+    local current_time = minetest.get_us_time()
+    -- Update cache every 5 seconds
+    if current_time - last_terminal_update > 5000000 then
+        terminal_cache = find_terminals()
+        last_terminal_update = current_time
+    end
+    return terminal_cache
+end
+
+-- Calculate distance between two positions (horizontal only)
+local function horizontal_distance(pos1, pos2)
     local dx = pos1.x - pos2.x
-    local dy = pos1.y - pos2.y
     local dz = pos1.z - pos2.z
-    return math.sqrt(dx*dx + dy*dy + dz*dz)
+    return math.sqrt(dx * dx + dz * dz)
 end
 
--- Helper function to check if a position is walkable (has blocks)
-local function is_position_clear(pos)
-    -- Check the position 1 block above the terminal (where drone hovers)
-    local check_pos = vector.add(pos, {x=0, y=1, z=0})
-    local node = minetest.get_node_or_nil(check_pos)
-    if node and minetest.registered_nodes[node.name] then
-        if minetest.registered_nodes[node.name].walkable then
-            return false
-        end
-    end
-    -- Also check the drone's collision space
-    for y = 0, 2 do
-        for x = -0.5, 0.5 do
-            for z = -0.5, 0.5 do
-                local test_pos = {
-                    x = math.floor(pos.x + x),
-                    y = pos.y + y,
-                    z = math.floor(pos.z + z)
-                }
-                local node = minetest.get_node_or_nil(test_pos)
-                if node and minetest.registered_nodes[node.name] and minetest.registered_nodes[node.name].walkable then
-                    return false
-                end
-            end
-        end
-    end
-    return true
-end
-
--- Find next terminal based on rules
-local function find_next_terminal(current_pos, current_terminal, all_terminals)
-    if #all_terminals < 2 then
-        return nil -- Need at least 2 terminals
-    end
-    
-    if #all_terminals == 2 then
-        -- If only 2 terminals, fly to the other one
-        for _, term in ipairs(all_terminals) do
-            if term ~= current_terminal then
-                if is_position_clear(term.object:get_pos()) then
-                    return term
-                end
-            end
-        end
-        return nil
-    end
-    
-    -- More than 2 terminals: fly to nearest but skip the one we just came from
-    local current_index = nil
-    for i, term in ipairs(all_terminals) do
-        if term == current_terminal then
-            current_index = i
-            break
-        end
-    end
-    
-    -- Find the previous terminal (the one we came from)
-    local prev_index = nil
-    if current_index then
-        prev_index = current_index - 1
-        if prev_index < 1 then
-            prev_index = #all_terminals
-        end
-    end
-    
-    -- Find nearest terminal that isn't the previous one
+-- Find the nearest terminal from a position, optionally excluding one
+local function find_nearest_terminal(from_pos, exclude_pos)
+    local terminals = get_terminals_cached()
     local nearest = nil
     local nearest_dist = math.huge
     
-    for i, term in ipairs(all_terminals) do
-        -- Skip current and previous terminal
-        if term ~= current_terminal and i ~= prev_index then
-            local dist = get_distance(current_pos, term.object:get_pos())
-            if dist < nearest_dist and is_position_clear(term.object:get_pos()) then
-                nearest = term
-                nearest_dist = dist
+    for _, term_pos in ipairs(terminals) do
+        if exclude_pos then
+            if vector.equals(term_pos, exclude_pos) then
+                goto continue
             end
+        end
+        
+        local dist = horizontal_distance(from_pos, term_pos)
+        if dist < nearest_dist then
+            nearest_dist = dist
+            nearest = term_pos
+        end
+        
+        ::continue::
+    end
+    
+    return nearest, nearest_dist
+end
+
+-- Check if a position is safe (no solid blocks at hover height)
+local function is_position_safe(pos)
+    local hover_pos = vector.new(pos.x, pos.y + 1, pos.z)
+    local node = minetest.get_node(hover_pos)
+    local def = minetest.registered_nodes[node.name]
+    
+    if def and def.walkable then
+        return false
+    end
+    
+    local term_node = minetest.get_node(pos)
+    if term_node.name ~= "menotics_passenger_drone:terminal" then
+        return false
+    end
+    
+    return true
+end
+
+-- Find an alternative nearby position if the direct hover spot is blocked
+local function find_alternative_hover(base_pos)
+    local offsets = {
+        {x = 1, y = 0, z = 0},
+        {x = -1, y = 0, z = 0},
+        {x = 0, y = 0, z = 1},
+        {x = 0, y = 0, z = -1},
+        {x = 1, y = 0, z = 1},
+        {x = -1, y = 0, z = 1},
+        {x = 1, y = 0, z = -1},
+        {x = -1, y = 0, z = -1},
+    }
+    
+    for _, offset in ipairs(offsets) do
+        local alt_pos = vector.add(base_pos, offset)
+        if is_position_safe(alt_pos) then
+            return alt_pos
         end
     end
     
-    -- If no clear terminal found, try any terminal except current
-    if not nearest then
-        for i, term in ipairs(all_terminals) do
-            if term ~= current_terminal then
-                local dist = get_distance(current_pos, term.object:get_pos())
-                if dist < nearest_dist then
-                    nearest = term
-                    nearest_dist = dist
-                end
-            end
-        end
+    return nil
+end
+
+-- Get target hover position (1 block above terminal, or alternative)
+local function get_target_hover_pos(terminal_pos)
+    if is_position_safe(terminal_pos) then
+        return vector.new(terminal_pos.x, terminal_pos.y + 1, terminal_pos.z)
+    else
+        return find_alternative_hover(terminal_pos)
     end
-    
-    return nearest
 end
 
 -- Drone entity definition
 minetest.register_entity("menotics_passenger_drone:drone", {
     initial_properties = {
-        visual = "mesh",
-        mesh = "menotics_drone.b3d",
-        textures = {"menotics-passenger.png"},
-        visual_size = {x=4, y=3},
-        collisionbox = {-0.4, -0.4, -0.4, 0.4, 0.4, 0.4},
         physical = true,
-        gravity = 0,
+        collide_with_objects = true,
+        weight = 5,
+        collisionbox = {-2, -0.5, -2, 2, 1.5, 2}, -- 4 blocks long, 3 blocks high
         stepheight = 1.0,
-        automatic_rotate = 0,
+        visual = "cube",
+        textures = {
+            "menotics_drone_side.png",   -- right
+            "menotics_drone_side.png",   -- left
+            "menotics_drone_roof.png",   -- top
+            "menotics_drone_bottom.png", -- bottom
+            "menotics_drone_front.png",  -- front
+            "menotics_drone_back.png",   -- back
+        },
         pointable = true,
+        static_save = true,
+        glow = 5,
+        visual_size = {x = 4, y = 3, z = 2}, -- 4 blocks long, 3 high, 2 wide
     },
     
     driver = nil,
     target_pos = nil,
     current_terminal = nil,
     wait_timer = 0,
-    state = "idle", -- idle, waiting, moving
-    last_collision_check = 0,
+    waiting = false,
+    state = "idle",
     
-    on_activate = function(self, staticdata)
+    on_activate = function(self, staticdata, dtime_s)
         self.driver = nil
         self.target_pos = nil
         self.current_terminal = nil
         self.wait_timer = 0
+        self.waiting = false
         self.state = "idle"
         
-        -- Parse staticdata if exists
-        if staticdata and staticdata ~= "" then
-            local data = minetest.deserialize(staticdata)
-            if data then
-                self.driver = data.driver
-                self.state = data.state or "idle"
+        local pos = self.object:get_pos()
+        if pos then
+            local nearest, _ = find_nearest_terminal(pos)
+            if nearest then
+                self.current_terminal = nearest
+                local hover_pos = get_target_hover_pos(nearest)
+                if hover_pos then
+                    self.object:set_pos(hover_pos)
+                    self.waiting = true
+                    self.wait_timer = 20 -- 20 seconds wait time
+                    self.state = "waiting"
+                end
             end
-        end
-        
-        -- Make sure physics properties are set correctly
-        self.object:set_properties({
-            physical = true,
-            gravity = 0,
-            stepheight = 1.0,
-        })
-    end,
-    
-    get_staticdata = function(self)
-        local data = {
-            driver = self.driver,
-            state = self.state,
-        }
-        return minetest.serialize(data)
-    end,
-    
-    on_rightclick = function(self, clicker)
-        if not clicker or not clicker:is_player() then
-            return
-        end
-        
-        local player_name = clicker:get_player_name()
-        
-        -- If player is already attached, detach them
-        if self.driver == player_name then
-            minetest.chat_send_all("[Drone] Player " .. player_name .. " disembarked")
-            clicker:dettach()
-            self.driver = nil
-            
-            -- If no driver, stop moving
-            if self.state == "moving" then
-                self.state = "waiting"
-                self.wait_timer = 20
-            end
-            return
-        end
-        
-        -- If someone else is driving, can't board
-        if self.driver then
-            minetest.chat_send_player(player_name, "[Drone] Already occupied!")
-            return
-        end
-        
-        -- Attach player to drone
-        self.driver = player_name
-        clicker:attach(self.object, {x=0, y=1, z=0}, {x=0, y=0, z=0}, 0)
-        minetest.chat_send_all("[Drone] Player " .. player_name .. " seated")
-        
-        -- Start movement if we have a target
-        if self.target_pos and self.state ~= "moving" then
-            self.state = "moving"
-        end
-    end,
-    
-    on_punch = function(self, puncher, time_from_last_punch, tool_capabilities, dir, damage)
-        if self.driver then
-            local player = minetest.get_player_by_name(self.driver)
-            if player then
-                player:dettach()
-                minetest.chat_send_all("[Drone] Player " .. self.driver .. " detached due to damage")
-            end
-            self.driver = nil
         end
     end,
     
@@ -227,256 +200,280 @@ minetest.register_entity("menotics_passenger_drone:drone", {
             return
         end
         
-        -- Check for collision by comparing expected vs actual position
-        if self.state == "moving" and self.target_pos then
-            self.last_collision_check = self.last_collision_check + dtime
-            if self.last_collision_check >= 0.5 then
-                self.last_collision_check = 0
-                
-                -- Simple collision detection: if we're not getting closer to target
-                local old_dist = self.last_dist or get_distance(pos, self.target_pos)
-                local new_dist = get_distance(pos, self.target_pos)
-                
-                -- If distance increased or stayed same for multiple checks, we might be stuck
-                if new_dist >= old_dist and old_dist > 2 then
-                    minetest.chat_send_all("[Drone] Collision detected! Finding alternative route...")
-                    -- Try to find another terminal
-                    local terminals = get_terminals()
-                    if self.current_terminal then
-                        local new_target = find_next_terminal(pos, self.current_terminal, terminals)
-                        if new_target and new_target ~= self.current_terminal then
-                            self.target_pos = new_target.object:get_pos()
-                            self.current_terminal = new_target
-                            minetest.chat_send_all("[Drone] New route found!")
-                        end
-                    end
-                end
-                
-                self.last_dist = new_dist
+        -- Handle passenger attachment
+        if self.driver then
+            local player = minetest.get_player_by_name(self.driver)
+            if not player or not player:get_attach() then
+                minetest.chat_send_all("[Drone] Passenger disconnected")
+                self.driver = nil
             end
-            
-            -- Move towards target
-            local dir = vector.direction(pos, self.target_pos)
-            if dir then
-                -- Normalize and scale speed
-                dir = vector.normalize(dir)
-                local speed = 3 -- blocks per second
-                local velocity = vector.multiply(dir, speed)
-                
-                -- Set velocity (the physics engine will handle collisions)
-                self.object:set_velocity(velocity)
-                
-                -- Look towards target
-                local yaw = math.atan2(dir.x, dir.z) - math.pi/2
-                self.object:set_rotation({x=0, y=yaw, z=0})
-                
-                -- Check if we've reached the target (within 1 block)
-                if get_distance(pos, self.target_pos) < 1.5 then
-                    self.object:set_velocity({x=0, y=0, z=0})
-                    self.state = "waiting"
-                    self.wait_timer = 20 -- Wait 20 seconds
-                    minetest.chat_send_all("[Drone] Arrived at terminal! Waiting 20 seconds...")
-                    
-                    -- Detach player on arrival
-                    if self.driver then
-                        local player = minetest.get_player_by_name(self.driver)
-                        if player then
-                            player:dettach()
-                            minetest.chat_send_all("[Drone] Player " .. self.driver .. " disembarked at destination")
-                        end
-                        self.driver = nil
-                    end
-                end
-            end
-        elseif self.state == "waiting" then
-            -- Keep drone stationary while waiting
-            self.object:set_velocity({x=0, y=0, z=0})
-            
+        end
+        
+        -- State machine
+        if self.state == "waiting" then
             self.wait_timer = self.wait_timer - dtime
+            
             if self.wait_timer <= 0 then
-                -- Time to move to next terminal
-                local terminals = get_terminals()
-                if #terminals > 0 then
-                    local next_terminal = find_next_terminal(pos, self.current_terminal, terminals)
-                    if next_terminal then
+                -- Wait time over, start moving to next terminal
+                self.waiting = false
+                self.state = "moving"
+                
+                -- Find next terminal (skip current one)
+                local next_terminal = find_nearest_terminal(pos, self.current_terminal)
+                
+                if next_terminal then
+                    local hover_pos = get_target_hover_pos(next_terminal)
+                    if hover_pos then
+                        self.target_pos = hover_pos
                         self.current_terminal = next_terminal
-                        self.target_pos = next_terminal.object:get_pos()
-                        self.state = "moving"
-                        minetest.chat_send_all("[Drone] Departing for next terminal!")
+                        
+                        local dir = vector.direction(pos, hover_pos)
+                        if dir then
+                            local speed = 3 -- blocks per second
+                            local velocity = vector.multiply(dir, speed)
+                            self.object:set_velocity(velocity)
+                            minetest.chat_send_all("[Drone] Departing to next terminal")
+                        else
+                            self.state = "waiting"
+                            self.wait_timer = 20
+                        end
                     else
-                        minetest.chat_send_all("[Drone] No valid destination found, remaining idle")
+                        minetest.chat_send_all("[Drone] No valid path to terminal")
                         self.state = "idle"
                     end
                 else
-                    self.state = "idle"
-                end
-            end
-        elseif self.state == "idle" then
-            -- Look for terminals to start route
-            local terminals = get_terminals()
-            if #terminals > 0 then
-                -- Find nearest clear terminal
-                local nearest = nil
-                local nearest_dist = math.huge
-                for _, term in ipairs(terminals) do
-                    local tpos = term.object:get_pos()
-                    if is_position_clear(tpos) then
-                        local dist = get_distance(pos, tpos)
-                        if dist < nearest_dist then
-                            nearest = term
-                            nearest_dist = dist
+                    -- No other terminals, go back to current/only terminal
+                    minetest.chat_send_all("[Drone] No other terminals available")
+                    
+                    if self.current_terminal then
+                        local hover_pos = get_target_hover_pos(self.current_terminal)
+                        if hover_pos and not vector.equals(pos, hover_pos) then
+                            self.target_pos = hover_pos
+                            local dir = vector.direction(pos, hover_pos)
+                            if dir then
+                                local speed = 3
+                                local velocity = vector.multiply(dir, speed)
+                                self.object:set_velocity(velocity)
+                                self.state = "moving"
+                            else
+                                self.state = "waiting"
+                                self.wait_timer = 20
+                            end
+                        else
+                            self.state = "waiting"
+                            self.wait_timer = 20
                         end
+                    else
+                        self.state = "idle"
                     end
                 end
+            end
+        elseif self.state == "moving" then
+            local vel = self.object:get_velocity()
+            
+            -- Check for collision (velocity near zero but haven't reached target)
+            if vector.length(vel) < 0.1 and self.target_pos then
+                local dist_to_target = vector.distance(pos, self.target_pos)
                 
-                if nearest then
-                    self.current_terminal = nearest
-                    self.target_pos = nearest.object:get_pos()
-                    -- Hover 1 block above terminal
-                    self.target_pos = vector.add(self.target_pos, {x=0, y=1, z=0})
-                    self.state = "moving"
-                    minetest.chat_send_all("[Drone] Starting route to nearest terminal")
+                if dist_to_target > 1 then
+                    -- Collision detected! Try alternate path
+                    minetest.chat_send_all("[Drone] Collision detected, finding alternate path")
+                    
+                    self.object:set_velocity(vector.new(0, 0, 0))
+                    
+                    if self.current_terminal then
+                        local alt_pos = find_alternative_hover(
+                            vector.new(self.current_terminal.x, self.current_terminal.y, self.current_terminal.z)
+                        )
+                        
+                        if alt_pos then
+                            self.target_pos = alt_pos
+                            local dir = vector.direction(pos, alt_pos)
+                            if dir then
+                                local speed = 2 -- Slower when rerouting
+                                local velocity = vector.multiply(dir, speed)
+                                self.object:set_velocity(velocity)
+                                minetest.chat_send_all("[Drone] Rerouted to alternative position")
+                            end
+                        else
+                            self.state = "idle"
+                            minetest.chat_send_all("[Drone] Stopped - no valid path")
+                        end
+                    end
+                else
+                    -- Close enough to target
+                    self.object:set_pos(self.target_pos)
+                    self.object:set_velocity(vector.new(0, 0, 0))
+                    self.target_pos = nil
+                    self.waiting = true
+                    self.wait_timer = 20
+                    self.state = "waiting"
+                    minetest.chat_send_all("[Drone] Arrived at terminal")
                 end
+            elseif self.target_pos then
+                -- Still moving, check arrival
+                local dist_to_target = vector.distance(pos, self.target_pos)
+                
+                if dist_to_target < 0.5 then
+                    self.object:set_pos(self.target_pos)
+                    self.object:set_velocity(vector.new(0, 0, 0))
+                    self.target_pos = nil
+                    self.waiting = true
+                    self.wait_timer = 20
+                    self.state = "waiting"
+                    minetest.chat_send_all("[Drone] Arrived at terminal")
+                end
+            else
+                self.state = "idle"
+            end
+        elseif self.state == "idle" then
+            -- Hover in place
+            local vel = self.object:get_velocity()
+            if vector.length(vel) > 0.1 then
+                self.object:set_velocity(vector.new(0, 0, 0))
             end
         end
     end,
-})
-
--- Terminal block definition
-minetest.register_node("menotics_passenger_drone:terminal", {
-    description = "Passenger Drone Terminal",
-    tiles = {"terminal.png"},
-    paramtype2 = "facedir",
-    place_param2 = 0,
-    is_ground_content = false,
-    walkable = true,
-    collision_box = {
-        type = "fixed",
-        fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5},
-    },
-    selection_box = {
-        type = "fixed",
-        fixed = {-0.5, -0.5, -0.5, 0.5, 0.5, 0.5},
-    },
     
-    on_place = function(itemstack, placer, pointed_thing)
-        -- Standard node placement
-        local ret = minetest.item_place_node(itemstack, placer, pointed_thing)
-        
-        -- Create terminal entity for tracking
-        local pos = pointed_thing.above
-        if pos then
-            minetest.add_entity(pos, "menotics_passenger_drone:terminal_entity")
+    on_rightclick = function(self, clicker)
+        if not clicker or not clicker:is_player() then
+            return
         end
         
-        return ret
+        local player_name = clicker:get_player_name()
+        
+        -- If already driving, detach (dismount)
+        if self.driver and self.driver == player_name then
+            local player = minetest.get_player_by_name(player_name)
+            if player then
+                player:set_detach()
+                minetest.chat_send_all("[Drone] " .. player_name .. " disembarked")
+                
+                local pos = self.object:get_pos()
+                if pos then
+                    player:set_pos(vector.new(pos.x + 1, pos.y, pos.z))
+                end
+                
+                self.driver = nil
+            end
+            return
+        end
+        
+        -- If someone else is driving
+        if self.driver then
+            minetest.chat_send_player(player_name, "[Drone] Already occupied!")
+            return
+        end
+        
+        -- Attach player to drone
+        local player_obj = clicker:get_object()
+        if player_obj then
+            player_obj:set_attach(self.object)
+            self.driver = player_name
+            minetest.chat_send_all("[Drone] " .. player_name .. " boarded")
+        end
     end,
     
-    after_dig_node = function(pos, oldnode, oldmeta, digger)
-        -- Remove associated entity
-        for _, obj in ipairs(minetest.get_objects_inside_radius(pos, 1)) do
-            local ent = obj:get_luaentity()
-            if ent and ent.name == "menotics_passenger_drone:terminal_entity" then
-                obj:remove()
+    on_punch = function(self, puncher, time_from_last_punch, tool_capabilities, dir, damage)
+        -- Eject passenger when punched
+        if self.driver then
+            local player = minetest.get_player_by_name(self.driver)
+            if player then
+                player:set_detach()
+                minetest.chat_send_all("[Drone] " .. self.driver .. " ejected due to damage")
+                
+                local pos = self.object:get_pos()
+                if pos then
+                    player:set_pos(vector.new(pos.x + 1, pos.y, pos.z))
+                end
+                
+                self.driver = nil
+            end
+        end
+    end,
+    
+    on_deactivate = function(self, removal)
+        -- Eject passenger when drone is removed
+        if self.driver then
+            local player = minetest.get_player_by_name(self.driver)
+            if player then
+                player:set_detach()
+                minetest.chat_send_all("[Drone] " .. self.driver .. " ejected (drone removed)")
+                self.driver = nil
             end
         end
     end,
 })
 
--- Invisible entity to track terminals
-minetest.register_entity("menotics_passenger_drone:terminal_entity", {
-    initial_properties = {
-        visual = "sprite",
-        textures = {"invisible.png"},
-        visual_size = {x=0, y=0},
-        collisionbox = {0, 0, 0, 0, 0, 0},
-        physical = false,
-        pointable = false,
-    },
-    
-    terminal_pos = nil,
-    
-    on_activate = function(self, staticdata)
-        self.terminal_pos = self.object:get_pos()
-        -- Move entity to node position below
-        local node_pos = vector.add(self.terminal_pos, {x=0, y=-1, z=0})
-        self.terminal_pos = node_pos
-    end,
-    
-    get_staticdata = function(self)
-        return ""
-    end,
-    
-    on_step = function(self, dtime)
-        -- Keep entity synced with terminal node
-        if self.terminal_pos then
-            local node = minetest.get_node_or_nil(self.terminal_pos)
-            if not node or node.name ~= "menotics_passenger_drone:terminal" then
-                -- Terminal was removed, remove this entity
-                self.object:remove()
-                return
-            end
-        end
-    end,
-})
-
--- Craft item for drone
+-- Craft item for spawning the drone
 minetest.register_craftitem("menotics_passenger_drone:item", {
-    description = "Passenger Drone (place to spawn)",
-    inventory_image = "menotics-passenger.png",
+    description = S("Passenger Drone (Place on ground to spawn)"),
+    inventory_image = "menotics_drone_front.png",
     
     on_place = function(itemstack, placer, pointed_thing)
-        local pos = pointed_thing.above
-        if not pos then
+        if not pointed_thing or not pointed_thing.under then
             return itemstack
         end
         
-        -- Check if there's enough space (4 blocks long, 3 high)
-        local node = minetest.get_node_or_nil(pos)
-        if node and minetest.registered_nodes[node.name] then
-            if minetest.registered_nodes[node.name].walkable then
-                minetest.chat_send_player(placer:get_player_name(), "[Drone] Not enough space!")
+        local pos = pointed_thing.under
+        local node = minetest.get_node(pos)
+        
+        local def = minetest.registered_nodes[node.name]
+        if def and def.walkable then
+            pos = vector.new(pos.x, pos.y + 1, pos.z)
+            node = minetest.get_node(pos)
+            def = minetest.registered_nodes[node.name]
+            
+            if def and def.walkable then
+                minetest.chat_send_player(placer:get_player_name(), 
+                    "[Drone] Cannot place here - position blocked")
                 return itemstack
             end
         end
         
-        -- Spawn the drone entity
-        local drone = minetest.add_entity(pos, "menotics_passenger_drone:drone")
-        if drone then
+        local drone_obj = minetest.add_entity(pos, "menotics_passenger_drone:drone")
+        
+        if drone_obj then
             itemstack:take_item()
             minetest.chat_send_all("[Drone] Passenger drone deployed!")
+        else
+            minetest.chat_send_player(placer:get_player_name(), 
+                "[Drone] Failed to spawn drone")
         end
         
         return itemstack
     end,
 })
 
--- Crafting recipe
+-- Crafting recipe: Steel Ingots + Mese Crystal + Glass
 minetest.register_craft({
     output = "menotics_passenger_drone:item",
     recipe = {
         {"default:steel_ingot", "default:mese_crystal", "default:steel_ingot"},
-        {"default:glass", "default:steel_ingot", "default:glass"},
-        {"default:glass", "default:steel_ingot", "default:glass"},
+        {"default:glass", "default:glass", "default:glass"},
+        {"default:steel_ingot", "default:steel_ingot", "default:steel_ingot"},
     },
 })
 
--- Debug command to list terminals
-minetest.register_chatcommand("list_terminals", {
-    params = "",
-    description = "List all passenger drone terminals",
-    func = function(name)
-        local terminals = get_terminals()
-        if #terminals == 0 then
-            minetest.chat_send_player(name, "[Drone] No terminals found")
-        else
-            minetest.chat_send_player(name, "[Drone] Found " .. #terminals .. " terminals:")
-            for i, term in ipairs(terminals) do
-                local pos = term.object:get_pos()
-                if pos then
-                    minetest.chat_send_player(name, string.format("  %d: (%.1f, %.1f, %.1f)", i, pos.x, pos.y, pos.z))
-                end
-            end
-        end
+-- Periodic terminal cache update
+minetest.register_globalstep(function(dtime)
+    local current_time = minetest.get_us_time()
+    if current_time - last_terminal_update > 10000000 then
+        terminal_cache = find_terminals()
+        last_terminal_update = current_time
+    end
+end)
+
+-- ABM to update cache when terminals are placed
+minetest.register_abm({
+    label = "Update terminal cache on placement",
+    nodenames = {"menotics_passenger_drone:terminal"},
+    interval = 1,
+    chance = 1,
+    action = function(pos, node, active_object_count, active_object_count_wider)
+        terminal_cache = find_terminals()
+        last_terminal_update = minetest.get_us_time()
     end,
 })
+
+minetest.log("action", "[menotics_passenger_drone] Mod loaded successfully")
