@@ -1,0 +1,5 @@
+name = menotics_passanger_drone
+description = Menotics passenger drone
+author = ronrob-lu
+version = 0.0.1
+depends = default
