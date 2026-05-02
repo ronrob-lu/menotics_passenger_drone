@@ -389,12 +389,9 @@ minetest.register_entity("menotics_passenger_drone:drone", {
         end
         
         -- Attach player to drone
-        local player_obj = clicker:get_object()
-        if player_obj then
-            player_obj:set_attach(self.object)
-            self.driver = player_name
-            minetest.chat_send_all("[Drone] " .. player_name .. " boarded")
-        end
+        clicker:set_attach(self.object, "", {x=0, y=1, z=0}, {x=0, y=0, z=0})
+        self.driver = player_name
+        minetest.chat_send_all("[Drone] " .. player_name .. " boarded")
     end,
     
     on_punch = function(self, puncher, time_from_last_punch, tool_capabilities, dir, damage)
